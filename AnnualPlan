@@ -1,0 +1,324 @@
+import json
+import re
+import io
+import csv # Keep for potential future use
+import datetime # Added to get current year
+import copy # Needed for deep copying state history
+
+# --- 1. Confirmed Question Structures (ALL SHEETS) ---
+# (Using the full structure from the previous step - COLLAPSED FOR BREVITY)
+all_question_structures = {
+    "Basic Information": [ {"question": "Name of Organization", "type": "open_ended", "options": None}, {"question": "Years In Business", "type": "open_ended", "options": None}, {"question": "Annual Revenue this past year", "type": "open_ended", "options": None}, {"question": "Projected Revenue Current Year", "type": "open_ended", "options": None} ],
+    "Desired State": [ {"question": "In the next 18-24 months will your organization be different? Consider?", "type": "open_ended", "options": None}, {"question": "If yes, how?", "type": "open_ended", "options": None}, {"question": "What will be the status of your service or product offering, or both, if appropriate?", "type": "open_ended", "options": None}, {"question": "What management systems and/or technology will you be using better or more effectively?", "type": "open_ended", "options": None}, {"question": "How will your key financial metrics look?", "type": "open_ended", "options": None}, {"question": "Will your relationship with your clients have changed? If so, how?", "type": "open_ended", "options": None}, {"question": "How Many people including yourself work in your business? Include FT/PT/Frelance", "type": "open_ended", "options": None}, {"question": "What else will change?", "type": "open_ended", "options": None} ],
+    "Marketing": [ {"question": "Do you currently have a website?", "options": [ "Yes", "No" ], "type": "multiple_choice"}, {"question": "What is the main purpose of your website?", "options": [ "Just for display purposes - just to show we are legit.", "To provide information about what we do and give prospective clients our contact details.", "A place where we do business. That is, sell our products and/or services" ], "type": "multiple_choice"}, {"question": "When thinking about your current website, which of the following statements are most accurate? (Regarding Description)", "options": [ "Our website poorly describes our current products and/or services", "Our website could do a better job of describing our current products and/or services.", "Our website accurately and extensively describes our current products and/or services." ], "type": "multiple_choice"}, {"question": "When thinking about your current website, which of the following statements are most accurate? (Regarding Appearance)", "options": [ "Our website looks outdated.", "Our website could use some updating.", "Our website is state of the art." ], "type": "multiple_choice"}, {"question": "When thinking about your current website, which of the following statements are most accurate? (Regarding Traffic Volume)", "options": [ "We have a very low volume of traffic to our website.", "We would like to get more traffic to our website.", "We are happy with the number of monthly visitors.", "We do not measure the volume of traffic we get to our website" ], "type": "multiple_choice"}, {"question": "In terms of your knowledge of how to analyze website traffic, which of the following statements is most accurate?", "options": [ "We have very little understanding of how to drive traffic to our website", "Our understanding of how to review our website performance is limited and we rarely do it.", "We routinely use Google Analytics or another similar tool to monitor our website performance and take action to improve it" ], "type": "multiple_choice"}, {"question": "In terms of taking steps to drive website traffic, which of the following statements is most accurate? (Regarding Visitor Actions)", "options": [ "We do not track if visitors are taking specific actions on our website.i.e. pages they visit etc", "We track some activity, but do not focus on improving website conversions. That is, getting business from people seeing us online.", "We are conscious of, and regularly manage our website conversion rates." ], "type": "multiple_choice"}, {"question": "In terms of taking steps to drive website traffic, which of the following statements is most accurate? (Regarding Improvement Efforts)", "options": [ "We never try to improve our website's performance.", "We occasionally try to improve our website's performance.", "We are continuously striving to improve our website's performance." ], "type": "multiple_choice"}, {"question": "In terms of taking steps to drive website traffic, which of the following statements is most accurate? (Regarding Social Media Use)", "options": [ "We are not using social media platforms to drive traffic to our website.", "We occasionally use social media platforms to drive traffic to our website.", "We continuously use social media platforms to drive traffic to our website." ], "type": "multiple_choice"}, {"question": "Which of the following platforms do you need to use more to promote your brand and drive website traffic? (Select all that apply)", "options": ["Facebook", "Instagram", "Pintrest", "LinkedIn", "TikTok", "Other"], "type": "multiple_select"}, {"question": "How much do you spend monthly on driving traffic to your website?", "options": [ "$0-$10", "$11-$100", "$101-$500", "$500+", "Don't know" ], "type": "multiple_choice"}, {"question": "Which forms of traditional marketing (not-online) platforms should you consider using more to promote your business? (Select all that apply)", "options": [ "Printed media (e.g. magazines, newspapers, etc.)", "Online journals and publications", "Billboards or company vehicle(s)", "Sponsorship(s)", "Membership of professional associations", "NA" ], "type": "multiple_select"}, {"question": "How much do you spend monthly on traditional marketing efforts?", "options": [ "$0-$10", "$11-$100", "$101-$500", "$500+", "Don't know" ], "type": "multiple_choice"}, {"question": "When thinking about your overall marketing efforts, which of the following statements are most accurate? (Regarding Client Interaction)", "options": [ "Our clients do not interact with our marketing efforts.", "Our clients occasionally interact with our marketing efforts.", "Our clients regularly interact with our marketing efforts." ], "type": "multiple_choice"}, {"question": "When thinking about your overall marketing efforts, which of the following statements are most accurate? (Regarding Targeting)", "options": [ "We do not effectively target our ideal client base.", "We need to improve how well we target our ideal client base.", "Our marketing efforts resonate well with our ideal client base." ], "type": "multiple_choice"}, {"question": "When thinking about your overall marketing efforts, which of the following statements are most accurate? (Regarding ROI)", "options": [ "We rarely see a return on our marketing investments.", "Our marketing investments only show occasional returns.", "We are happy with the direct return from our marketing investments." ], "type": "multiple_choice"} ],
+     "Customers": [ {"question": "Please select the statement that most accurately reflects your relationship with your customers. (Regarding Customer List)", "options": [ "We do not maintain an up to date list of our customers.", "Our customer records are not as good as they could be.", "Our customer records are comprehensive and up to date." ], "type": "multiple_choice"}, {"question": "Please select the statement that most accurately reflects your relationship with your customers. (Regarding Leads List)", "options": [ "We do not maintain an up to date list of potential customers.", "Our potential customer leads records are not as good as they could be.", "Our potential customer leads records are comprehensive and well maintained." ], "type": "multiple_choice"}, {"question": "Please select the statement that most accurately reflects your relationship with your customers. (Regarding Revenue Tracking)", "options": [ "We do not track the annual revenue on a client by client basis.", "We have only an approximate idea of our revenue per client.", "We have accurate data on our client revenue and track it regularly." ], "type": "multiple_choice"}, {"question": "Please select the statement that most accurately reflects your relationship with your customers. (Regarding Lifetime Value)", "options": [ "We do not track the lifetime value of our customers.", "We have only an approximate lifetime value of our clients.", "We have accurate data on the lifetime value of our clients." ], "type": "multiple_choice"}, {"question": "Please select the statement that most accurately reflects your relationship with your customers. (Regarding Acquisition Cost)", "options": [ "We don't know how much we spend on customer acquisition.", "We have some idea of the cost of customer acquisition.", "We know and track the cost of customer acquisition." ], "type": "multiple_choice"}, {"question": "Do you have different types of customers such that they can be broken into a number of distinct groups?", "options": [ "Yes", "No" ], "type": "multiple_choice"}, {"question": "If yes, List the top two to four customer groups by sales revenue. Start with the highest revenue group.", "options": None, "type": "open_ended"}, {"question": "Which of the following statements best reflects the loyalty of your customers to your business?", "options": [ "We do not know how loyal our customers are to us.", "Our customers are not loyal to us.", "Our customers are only somewhat loyal to us.", "We have very loyal customers." ], "type": "multiple_choice"}, {"question": "How often do you ask your customers for referrals?", "options": [ "Once a month", "Twice a year", "Once a year", "Less than once a year", "Never" ], "type": "multiple_choice"}, {"question": "List any other areas you need to work on to be rated better by your customers.", "options": None, "type": "open_ended"}, {"question": "Do you carry out a post service customer satisfaction survey?", "options": [ "Yes", "No" ], "type": "multiple_choice"}, {"question": "Approximately how satisfied are your customers?", "options": [ "100%", "99-90%", "89-70%", "69-50%", "49-30%", "29-0%" ], "type": "multiple_choice"} ],
+     "Sales": [ {"question": "Whether you or your Sales Person/Team are responsible for Sales, which of the following are true? Check all that apply.", "options": [ "I am comfortable in the Sales role", "I or my Sales team need better tools and training to do the job more effectively", "Overall I/we are happy with my/our capability in the Sales area", "We need to add Sales staff to our team", "I am not comfortable in the Sales role" ], "type": "multiple_select"}, {"question": "When thinking about how you manage Sales Revenue which of the following best applies", "options": [ "We set targets for Sales Revenue on a regular basis and manage our activities to hit or exceed them", "We have Sales Revenue targets but don't really manage our selling activity with them in mind", "We have have very fluid targets for Sales Revenue and do what we can to grow sales", "We don't really set targets for Sales Revenue" ], "type": "multiple_choice"}, {"question": "When thinking about the Sales process which of the following best applies. Check all that apply.", "options": [ "We need to analyze what works and doesn't work in the Sales process", "We need to train more on how to be effective in selling and sealing the deal", "We need to seek 3rd party support or more experienced sales people to grow our Sales", "We are relatively happy with our approach to and success with selling" ], "type": "multiple_select"}, {"question": "When thinking about your current customer base, which of the following applies?", "options": [ "We regularly seek ways of growing the amount of business we do with each of our current customers", "We only occasionally seek ways to grow sales with customers we already do business with", "We need to look at how we can grow sales with customers we already do business with" ], "type": "multiple_choice"}, {"question": "List up to three areas that are opportunities for Sales growth just enter in the name of the Area/Thing", "options": None, "type": "open_ended"}, {"question": "List up to three areas that are blockages to Sales growth", "options": None, "type": "open_ended"} ],
+     "Competition": [ {"question": "List up to three of your strongest competitors below:", "options": None, "type": "open_ended"}, {"question": "When thinking about your competition, list up to five areas in which you have opportunity to improve your competitive edge.", "options": None, "type": "open_ended"} ],
+     "Technology": [ {"question": "When thinking about the use of technology and modern business apps, which of the following statements best reflects your comfort level.", "options": [ "We are fully competent in applying the right technology and business apps to our business needs.", "We are only somewhat competent in applying the right technology and business apps to our business needs.", "We are not comfortable in applying the right technology and business apps to our business needs.", "We are completely turned off by technology." ], "type": "multiple_choice"}, {"question": "In what areas of your business could you be better applying technology and modern business apps? Complete the sentence \"We could be making better use of technology and modern business apps in the area of ..", "options": None, "type": "open_ended"}, {"question": "Where could you look for external help in addressing your technology and business application needs?", "options": None, "type": "open_ended"}, {"question": "Are there any other issues with your use of technology that need to be addressed?", "options": None, "type": "open_ended"} ],
+     "People & Organization": [ {"question": "When thinking about your personal skills, and/or your people's skills (ability to do the job well), in which areas of your business do you see weaknesses. Check all that apply.", "options": [ "Accounting", "Human Resources", "People Management", "IT", "Sales & Marketing", "Production/ Supply Chain" ], "type": "multiple_select"}, {"question": "When thinking about your and your people's capacity to get everything done, which of the following areas are under resourced? Check all that apply.", "options": [ "Accounting", "Human Resources", "People Management", "IT", "Sales & Marketing", "Production/ Supply Chain" ], "type": "multiple_select"}, {"question": "Where could you look for external help in addressing your technology and business application needs?", "options": None, "type": "open_ended"}, {"question": "List any other skills area in which you have issues.", "options": None, "type": "open_ended"}, {"question": "List any other areas in which you have capacity issues (not enough resources)", "options": None, "type": "open_ended"}, {"question": "Do you and/or your management team have enough time to work in and on your business? Which of the following statements best apply?", "options": [ "I/we have enough time to manage the business day to day and for the long run", "I/we struggle to get the time to stay on top of everything we need to get done, especially long term plans.", "I/we really can't keep up with everything on a regular basis" ], "type": "multiple_choice"}, {"question": "When thinking about how you and/or your team manage the business, which areas are not getting enough attention?", "options": None, "type": "open_ended"} ],
+     "Service & Delivery": [ {"question": "Briefly describe areas of opportunity in your service that have not yet been covered. Things that could be improved. Things that would drive sales or improve customer satisfaction.", "options": None, "type": "open_ended"}, {"question": "List any product development or changes to your product offering that you are considering or need to make.", "options": None, "type": "open_ended"} ],
+     "Business Metrics": [ {"question": "Are you using QuickBooks or a similar accounting platform to record your financial transactions?", "options": [ "Yes", "No" ], "type": "multiple_choice"}, {"question": "If you are using QuickBooks or another third party accounting platform, which of the following statements most accurately reflects the way you are interacting with it? (Regarding Reports Access)", "options": [ "We rarely access our accounting reports", "We only occasionally access our accounting reports (e.g. less than once per month).", "We routinely access our accounting reports (e.g. once or more per month)." ], "type": "multiple_choice"}, {"question": "If you are using QuickBooks or another third party accounting platform, select the statement that most accurately reflects your interaction regarding:", "type": "multiple_sets", "sets": [ { "topic": "P&L Statements", "options": [ "We rarely generate profit and loss statements.", "We only occasionally generate profit and loss statements.", "We routinely generate profit and loss statements." ] }, { "topic": "Financial Health Comfort", "options": [ "We do not feel comfortable with assessing our financial health.", "We only feel somewhat comfortable with assessing our financial health.", "We have strong insights into the financial health of our business." ] }, { "topic": "Bookkeeper", "options": [ "We do not need a dedicated bookeeper.", "We do not have a dedicated bookeeper.", "We have a bookeeper but are unhappy with the service.", "Our bookeeper keeps our financial records in good shape." ] }, { "topic": "CPA", "options": [ "We do not have a dedicated CPA.", "We have a CPA but are unhappy with the service.", "Our CPA provides excellent services.", "We do not need a dedicated CPA" ] } ] }, {"question": "Which of the following things do you NOT but SHOULD measure better on a regular basis? Check all that apply.", "options": [ "Customer satisfaction", "Sales by product or service offering", "Number of visitors to my website", "Number of customers that convert on my website", "Productivity of my workforce", "Quality of our product or service offering" ], "type": "multiple_select"}, {"question": "How would you describe your use of Standard Operating Procedures (SOP) in your business", "options": [ "Not using any", "Only some processes are covered", "We use and manage SOPs extensively" ], "type": "multiple_choice"} ],
+      "Misc": [ {"question": "List any areas of existing or potential opportunity that may/will need to be leveraged and you think hasn't already come up in the survey.", "options": None, "type": "open_ended"}, {"question": "List any areas of strength that may/will be drivers of change that you think hasn't already come up in the survey", "options": None, "type": "open_ended"}, {"question": "List any areas of weakness that may/will need to be dealt with, that you think hasn't already come up in the survey.", "options": None, "type": "open_ended"}, {"question": "List any areas of existing or potential threat that may/will need to be dealt with, that you think hasn't already come up in the survey.", "options": None, "type": "open_ended"} ]
+}
+
+
+# Define the order for the main ANALYSIS loop (Activities 1-7)
+ANALYSIS_SHEET_ORDER = [
+    "Marketing", "Customers", "Sales", "Competition", "Technology",
+    "People & Organization", "Service & Delivery", "Business Metrics", "Misc"
+]
+
+# Rating options
+IMPACT_CERTAINTY_OPTIONS = ["Low", "Medium", "High"]
+
+# --- 2. State Management ---
+conversation_state = {
+    "current_phase": "init",
+    "current_sheet_index": -1,
+    "current_activity": 1,
+    "current_question_index": 0,
+    "activity_data": {}
+}
+
+# --- 3. User Data Storage ---
+user_data = {}
+
+# --- 4. Helper Functions ---
+# (Same as previous version - COLLAPSED FOR BREVITY)
+def clean_text(text):
+    if isinstance(text, str): text = re.sub(r'\[source:\s*\d+\]', '', text); text = re.sub(r'[\r\n]+', ' ', text); text = ' '.join(text.split()); return text.strip()
+    return text
+def get_potential_drivers(sheet_name, structures, data):
+    potential_drivers = []; act1_answers = data.get(sheet_name, {}).get("Activity 1", {}); act1_struct = structures.get(sheet_name, []); act2_insights = data.get(sheet_name, {}).get("Activity 2", [])
+    for index, answer in act1_answers.items():
+        display_answer = answer;
+        if isinstance(answer, list): display_answer = ", ".join(answer) # Format list answers for display
+        if display_answer and index < len(act1_struct): q_data = act1_struct[index]; q_text = q_data["question"]; driver_text = f"Answer to '{q_text}': {display_answer}"; potential_drivers.append({"id": f"a1_{index}", "text": driver_text, "source_q_idx": index})
+    for index, insight in enumerate(act2_insights):
+        if insight: driver_text = f"Insight: {insight}"; potential_drivers.append({"id": f"a2_{index}", "text": driver_text, "source_q_idx": None})
+    return potential_drivers
+def get_highly_rated_drivers(sheet_name, data, structures):
+     highly_rated = []; act4_ratings = data.get(sheet_name, {}).get("Activity 4", {}); act3_classifications = data.get(sheet_name, {}).get("Activity 3", {}); potential_drivers = get_potential_drivers(sheet_name, structures, data); driver_map = {driver['id']: driver['text'] for driver in potential_drivers}
+     for driver_id, ratings in act4_ratings.items():
+         if act3_classifications.get(driver_id, False):
+             is_high_impact = ratings.get("impact", "").lower() == "high"; is_high_or_med_certainty = ratings.get("certainty", "").lower() in ["high", "medium"]
+             if is_high_impact and is_high_or_med_certainty: highly_rated.append({"id": driver_id, "text": driver_map.get(driver_id, f"Rated Driver {driver_id}") })
+     return highly_rated
+def get_themes_for_objectives(sheet_name, data):
+    return list(data.get(sheet_name, {}).get("Activity 5", {}).keys())
+def get_all_objectives(data):
+    all_objectives = []
+    for sheet_name in ANALYSIS_SHEET_ORDER: objectives_list = data.get(sheet_name, {}).get("Activity 6", []);
+    for obj_data in objectives_list: obj_data['sheet'] = sheet_name; all_objectives.append(obj_data)
+    return all_objectives
+
+
+# --- 5. Core Logic Function (Refined State Transitions) ---
+# (Same as previous version - COLLAPSED FOR BREVITY)
+def get_next_prompt(state, structures, data):
+    current_state_before_prompt = state.copy(); phase = state.get("current_phase", "init"); q_index = state["current_question_index"]; activity = state["current_activity"]; sheet_idx = state["current_sheet_index"]; prompt = "Error"; options = None; prompt_type = "error"
+    # --- Phase Transitions ---
+    if phase == "init": pass
+    elif phase == "basic_info":
+        if q_index >= len(structures.get("Basic Information", [])): phase = "desired_state"; state["current_phase"] = phase; state["current_question_index"] = 0; state["current_activity"] = 1; q_index=0;
+    elif phase == "desired_state":
+        if q_index >= len(structures.get("Desired State", [])): phase = "analysis_sheets"; state["current_phase"] = phase; state["current_sheet_index"] = 0; state["current_activity"] = 1; state["current_question_index"] = 0; state["activity_data"] = {}; sheet_idx=0; activity=1; q_index=0;
+    elif phase == "analysis_sheets":
+        sheet_name = ANALYSIS_SHEET_ORDER[sheet_idx] if sheet_idx < len(ANALYSIS_SHEET_ORDER) else None
+        if sheet_name and activity > 7: state["current_sheet_index"] += 1; sheet_idx += 1; state["current_activity"] = 1; state["current_question_index"] = 0; state["activity_data"] = {}; activity=1; q_index=0;
+        if sheet_idx >= len(ANALYSIS_SHEET_ORDER): phase = "timeline"; state["current_phase"] = phase; state["current_question_index"] = 0; all_objectives = get_all_objectives(data); state["activity_data"] = { "all_objectives": all_objectives, "timeline_data": {}, "timeline_step": "ask_duration" }; q_index=0;
+    elif phase == "timeline":
+         if q_index >= len(state["activity_data"].get("all_objectives", [])): data["Timeline"] = state["activity_data"].get("timeline_data", {}); phase = "summary"; state["current_phase"] = phase; state["current_question_index"] = 0; state["activity_data"] = {};
+    elif phase == "summary": pass
+    # --- Determine Prompt Based on Phase ---
+    if phase == "init": prompt = """Welcome!... Ensure key team members are part of the guided interview process... Please type **Start** to begin."""; options = None; prompt_type = "initial_prompt" # Shortened
+    elif phase == "basic_info": sheet_name = "Basic Information"; sheet_questions = structures.get(sheet_name, []); question_data = sheet_questions[q_index]; prompt = question_data["question"]; options = question_data["options"]; prompt_type = question_data["type"]
+    elif phase == "desired_state":
+        if state["current_question_index"] == 0 and current_state_before_prompt.get("current_phase") == "basic_info": prompt = f"--- Moving to Desired State ---"; prompt_type = "activity_transition"
+        else: sheet_name = "Desired State"; sheet_questions = structures.get(sheet_name, []); question_data = sheet_questions[q_index]; prompt = question_data["question"]; options = question_data["options"]; prompt_type = question_data["type"]
+    elif phase == "analysis_sheets":
+        sheet_name = ANALYSIS_SHEET_ORDER[sheet_idx]; activity = state["current_activity"]; q_index = state["current_question_index"]
+        if activity == 1 and q_index == 0 and (current_state_before_prompt.get("current_phase") != "analysis_sheets" or current_state_before_prompt.get("current_sheet_index") != sheet_idx) : prompt = f"--- Starting Situation Analysis: {sheet_name} ---"; prompt_type = "activity_transition"
+        elif activity == 4 and q_index == 0 and state["activity_data"].get("rating_step","Impact") == "Impact" and not state["activity_data"].get("definition_shown", False): prompt = """--- Activity 4 Definitions --- ... You will get the hang of it! ..."""; options = None; prompt_type = "show_definition"; state["activity_data"]["definition_shown"] = True # Shortened
+        else: # Logic for Activities 1-7 (COLLAPSED - same as before)
+            if activity == 1:
+                if sheet_name in structures and structures[sheet_name]: sheet_questions = structures[sheet_name]
+                else: sheet_questions = []
+                if q_index < len(sheet_questions): question_data = sheet_questions[q_index]; prompt = question_data["question"]; options = question_data["options"]; prompt_type = question_data["type"]
+                else: state["current_activity"] = 2; state["current_question_index"] = 0; state["activity_data"] = {"insights": []}; prompt = f"--- {sheet_name} - Activity 2: Insights ---\nEnter insights ('DONE' when finished)."; prompt_type = "collect_insights"
+            elif activity == 2: state["current_activity"] = 3; state["current_question_index"] = 0; potential_drivers = get_potential_drivers(sheet_name, structures, data); state["activity_data"] = { "potential_drivers": potential_drivers, "driver_classifications": {} }; prompt = f"--- {sheet_name} - Activity 3: Identify Drivers ---\nRespond 'Important' or 'Not Important'."; prompt_type = "activity_transition"
+            elif activity == 3: potential_drivers = state["activity_data"].get("potential_drivers", []);
+            if q_index < len(potential_drivers): driver_item = potential_drivers[q_index]; prompt = f"Driver ({q_index+1}/{len(potential_drivers)}): '{driver_item['text']}'\nImportant or Not Important?"; options = ["Important", "Not Important"]; prompt_type = "classify_driver"
+            else: state["current_activity"] = 4; state["current_question_index"] = 0; important_drivers = [d for d_id, imp in state["activity_data"].get("driver_classifications", {}).items() if imp for d in state["activity_data"].get("potential_drivers", []) if d['id'] == d_id]; state["activity_data"] = { "important_drivers": important_drivers, "driver_ratings": {}, "rating_step": "Impact", "definition_shown": False };
+            if not important_drivers: state["current_activity"] = 5; state["current_question_index"] = 0; state["activity_data"] = { "themes": {}, "drivers_to_group": [], "assigned_driver_ids": set(), "grouping_step": "ask_theme_name" }; prompt = f"--- {sheet_name} - Activity 5 ---\nNo drivers to rate."; prompt_type = "activity_transition"
+            else: prompt = f"--- {sheet_name} - Activity 4 ---\nRate {len(important_drivers)} driver(s)."; prompt_type = "activity_transition"
+            elif activity == 4: important_drivers = state["activity_data"].get("important_drivers", []);
+            if q_index < len(important_drivers): driver_item = important_drivers[q_index]; rating_step = state["activity_data"].get("rating_step", "Impact");
+            if rating_step == "Impact": prompt = f"Rating ({q_index+1}/{len(important_drivers)}): '{driver_item['text']}'\nIMPACT:"; options = IMPACT_CERTAINTY_OPTIONS; prompt_type = "rate_impact"
+            elif rating_step == "Certainty": prompt = f"Rating ({q_index+1}/{len(important_drivers)}): '{driver_item['text']}'\nCERTAINTY:"; options = IMPACT_CERTAINTY_OPTIONS; prompt_type = "rate_certainty"
+            else: state["current_activity"] = 5; state["current_question_index"] = 0; highly_rated_drivers = get_highly_rated_drivers(sheet_name, data, structures); state["activity_data"] = { "themes": {}, "drivers_to_group": highly_rated_drivers, "assigned_driver_ids": set(), "grouping_step": "ask_theme_name" }; prompt = f"--- {sheet_name} - Activity 5 ---\nGroup {len(highly_rated_drivers)} driver(s)."; prompt_type = "activity_transition"
+            elif activity == 5: grouping_step = state["activity_data"].get("grouping_step", "ask_theme_name"); drivers_to_group = state["activity_data"].get("drivers_to_group", []); assigned_driver_ids = state["activity_data"].get("assigned_driver_ids", set()); unassigned_drivers = [d for d in drivers_to_group if d['id'] not in assigned_driver_ids];
+            if not unassigned_drivers and "current_theme_name" not in state["activity_data"]: state["current_activity"] = 6; state["current_question_index"] = 0; themes_list = get_themes_for_objectives(sheet_name, data); state["activity_data"] = {"objectives": [], "themes_for_objectives": themes_list }; prompt = f"--- {sheet_name} - Activity 6 ---\nDefine objectives."; prompt_type = "activity_transition"
+            elif grouping_step == "ask_theme_name": prompt = "Remaining Drivers:\n"; current_assignment_map = {}; [ (prompt := prompt + f" {idx+1}. {driver['text']}\n", current_assignment_map.update({str(idx+1): driver['id']})) for idx, driver in enumerate(unassigned_drivers) ]; state["activity_data"]["current_assignment_map"] = current_assignment_map; prompt += "\nEnter theme name, or 'DONE'."; options = None; prompt_type = "get_theme_name"
+            elif grouping_step == "assign_drivers": current_theme_name = state["activity_data"].get("current_theme_name", "Theme?"); prompt = f"Assign drivers to '{current_theme_name}'\nAvailable:\n"; current_assignment_map = {}; [ (prompt := prompt + f" {idx+1}. {driver['text']}\n", current_assignment_map.update({str(idx+1): driver['id']})) for idx, driver in enumerate(unassigned_drivers) ]; state["activity_data"]["current_assignment_map"] = current_assignment_map; prompt += "\nEnter numbers."; options = None; prompt_type = "get_driver_assignments"
+            elif activity == 6: themes_list = state["activity_data"].get("themes_for_objectives", []); q_index = state["current_question_index"];
+            if not themes_list: state["current_activity"] = 7; state["current_question_index"] = 0; state["activity_data"] = {}; prompt = f"--- {sheet_name} - Activity 7 ---\nNo objectives."; prompt_type = "activity_transition"
+            elif q_index < len(themes_list): current_theme_name = themes_list[q_index]; prompt = f"--- Theme: '{current_theme_name}' ---\nEnter objective text ('NEXT THEME' when done)."; options = None; prompt_type = "get_objective"
+            else: state["current_activity"] = 7; state["current_question_index"] = 0; state["activity_data"] = {}; prompt = f"--- {sheet_name} - Activity 7 ---\nObjectives noted."; prompt_type = "activity_transition"
+            elif activity == 7: prompt = f"DEBUG: Should transition from Act 7 of {sheet_name}"; prompt_type="debug" # Handled by phase logic
+    elif phase == "timeline":
+        all_objectives = state["activity_data"].get("all_objectives", [])
+        timeline_step = state["activity_data"].get("timeline_step", "ask_duration"); obj_index = state["current_question_index"]
+        if obj_index < len(all_objectives):
+            current_objective = all_objectives[obj_index]; obj_text = current_objective.get("objective", "N/A"); obj_origin = f"(From: {current_objective.get('sheet', 'N/A')}, Theme: {current_objective.get('theme','N/A')})"
+            if timeline_step == "ask_duration": prompt = f"--- Timeline ({obj_index+1}/{len(all_objectives)}) ---\nObj: '{obj_text}' {obj_origin}\n\nEstimate duration:"; options = None; prompt_type = "get_duration"
+            elif timeline_step == "ask_placement": prompt = f"--- Timeline ({obj_index+1}/{len(all_objectives)}) ---\nObj: '{obj_text}' {obj_origin}\n\nWhen should work start?:"; options = None; prompt_type = "get_placement"
+        else: prompt = "--- Summary Generation ---"; prompt_type = "generate_summary" # Transition handled above
+    elif phase == "summary": prompt = "Summary generation simulated."; prompt_type = "completed"; # Final post-summary handled below
+
+    # Add post-summary instructions if type is 'completed'
+    if prompt_type == "completed":
+         company_name = data.get("Basic Information", {}).get("Activity 1", {}).get(0, "Your Company")
+         current_year = datetime.datetime.now().year; example_filename = f"{company_name} My Business Success Manager {current_year}"
+         post_summary_instructions = f"""
+\n---
+**Next Steps:**
+* Export the timeline Table above to a sheet named **TimeLine**. (Note: This bot simulation cannot directly export).
+* Copy the full summary above to a new sheet named **Strategic Plan Summary** in the same workbook.
+* Build a phased timeline based on this data to visually review the plan.
+* Adjust any needed timelines to ensure adequate staffing is available for the planned activities.
+* Share your plan with your team!
+* Save the workbook, for example as: **{example_filename}.xlsx**
+"""
+         prompt += post_summary_instructions # Append instructions
+
+    return prompt, options, prompt_type
+
+
+# --- 6. Final Output Function (Implemented) ---
+# (Same as previous version - COLLAPSED FOR BREVITY)
+def generate_summary(user_data, structures):
+    summary = "# My Business Success Plan Summary\n\n"
+    summary += "## Basic Information\n"; basic_info_data = user_data.get("Basic Information", {}).get("Activity 1", {}); basic_info_struct = structures.get("Basic Information", [])
+    if basic_info_data and basic_info_struct: [ summary := summary + f"- **{basic_info_struct[i]['question']}:** {basic_info_data.get(i, '*Not answered*')}\n" for i in range(len(basic_info_struct)) ]
+    else: summary += "*No basic information entered.*\n"
+    summary += "\n## Desired State (18-24 Months)\n"; desired_state_data = user_data.get("Desired State", {}).get("Activity 1", {}); desired_state_struct = structures.get("Desired State", [])
+    if desired_state_data and desired_state_struct: [ summary := summary + f"- **{desired_state_struct[i]['question']}:** {desired_state_data.get(i, '*Not answered*')}\n" for i in range(len(desired_state_struct)) ]
+    else: summary += "*No desired state information entered.*\n"
+    summary += "\n---\n\n## Situation Analysis & Objectives\n"
+    for sheet_name in ANALYSIS_SHEET_ORDER:
+        summary += f"\n### {sheet_name}\n\n"; sheet_data = user_data.get(sheet_name, {}); found_data_for_sheet = False
+        insights = sheet_data.get("Activity 2", []);
+        if insights: summary += "**Insights:**\n"; [ summary := summary + f"- {insight}\n" for insight in insights ]; summary += "\n"; found_data_for_sheet = True
+        potential_drivers = get_potential_drivers(sheet_name, structures, sheet_data); driver_map = {d['id']: d['text'] for d in potential_drivers}; act3_classifications = sheet_data.get("Activity 3", {}); act4_ratings = sheet_data.get("Activity 4", {}); important_drivers_summary = []
+        for driver_id, is_important in act3_classifications.items():
+             if is_important: driver_text = driver_map.get(driver_id, driver_id); rating_info = act4_ratings.get(driver_id, {}); impact = rating_info.get("impact", "N/A"); certainty = rating_info.get("certainty", "N/A"); important_drivers_summary.append(f"- {driver_text} (Impact: {impact}, Certainty: {certainty})\n")
+        if important_drivers_summary: summary += "**Key Drivers (Important & Rated):**\n"; summary += "".join(important_drivers_summary); summary += "\n"; found_data_for_sheet = True
+        themes = sheet_data.get("Activity 5", {});
+        if themes:
+             summary += "**Themes:**\n";
+             for theme_name, driver_ids in themes.items(): summary += f"- **Theme: {theme_name}**\n"; [ summary := summary + f"  - Driver: {driver_map.get(driver_id, driver_id)}\n" for driver_id in driver_ids ]
+             summary += "\n"; found_data_for_sheet = True
+        objectives = sheet_data.get("Activity 6", []);
+        if objectives:
+            summary += "**Objectives:**\n"; objectives_by_theme = {}; [ objectives_by_theme.setdefault(obj_data.get('theme', 'Uncategorized'), []).append(obj_data.get('objective', 'N/A')) for obj_data in objectives ]
+            for theme, obj_list in objectives_by_theme.items(): summary += f"- **Theme: {theme}**\n"; [ summary := summary + f"  - Objective: {obj_text}\n" for obj_text in obj_list ]
+            summary += "\n"; found_data_for_sheet = True
+        if not found_data_for_sheet: summary += "*No significant insights, drivers, themes, or objectives recorded.*\n"
+    summary += "\n---\n\n## Timeline\n"; timeline_data = user_data.get("Timeline", {}); all_objectives = get_all_objectives(user_data)
+    if not all_objectives: summary += "*No objectives defined.*\n"
+    elif timeline_data:
+        summary += "| Objective | From Sheet | Theme | Duration | Start/Placement |\n|---|---|---|---|---|\n"
+        for i, obj_data in enumerate(all_objectives): timeline_info = timeline_data.get(i, {}); obj_text = obj_data.get("objective", f"Obj {i+1}"); obj_sheet = obj_data.get("sheet", "N/A"); obj_theme = obj_data.get("theme", "N/A"); duration = timeline_info.get("duration", "N/A"); placement = timeline_info.get("placement", "N/A"); summary += f"| {obj_text} | {obj_sheet} | {obj_theme} | {duration} | {placement} |\n"
+    else:
+        summary += "*Timeline information not entered.*\n\n**Defined Objectives (No Timeline Data):**\n"
+        for i, obj_data in enumerate(all_objectives): obj_text = obj_data.get("objective", f"Obj {i+1}"); obj_sheet = obj_data.get("sheet", "N/A"); obj_theme = obj_data.get("theme", "N/A"); summary += f"- {obj_text} (Sheet: {obj_sheet}, Theme: {obj_theme})\n"
+    return summary
+
+
+# --- Main Simulation Loop (Updated for Undo + Numbered Options) ---
+print("--- Chatbot Simulation Start ---")
+conversation_state = { "current_phase": "init", "current_sheet_index": -1, "current_activity": 1, "current_question_index": 0, "activity_data": {} }
+user_data = {}
+turn = 1; max_turns = 400
+# Store previous state for basic undo
+previous_conversation_state = None
+current_turn_options = None # Store options presented in current turn
+
+while turn <= max_turns:
+    print(f"\n--- Turn {turn} ---")
+    # Store state BEFORE getting the prompt for potential undo
+    state_before_prompt = copy.deepcopy(conversation_state)
+
+    # --- Get Prompt ---
+    prompt, options, q_type = get_next_prompt(conversation_state, all_question_structures, user_data)
+    current_turn_options = options # Store options for this turn to map number input later
+
+    # --- Display Prompt and Numbered Options ---
+    print(f"Bot:\n> {prompt}")
+    prompt_instruction = ""
+    if options:
+        numbered_types = ["multiple_choice", "multiple_select", "classify_driver", "rate_impact", "rate_certainty"]
+        if q_type in numbered_types:
+             print("Options:")
+             for i, opt in enumerate(options): print(f"  {i+1}. {opt}")
+             if q_type == "multiple_select": prompt_instruction = "Please enter the numbers corresponding to your choices, separated by commas (or type 'undo')."
+             else: prompt_instruction = "Please enter the number corresponding to your choice (or type 'undo')."
+             print(f"\n({prompt_instruction})")
+        elif q_type == "multiple_sets": # Handle multiple_sets separately
+             print("Please answer for each topic:")
+             for s_idx, option_set in enumerate(options):
+                 print(f"  Topic: {option_set['topic']}")
+                 for o_idx, opt in enumerate(option_set['options']): print(f"    {o_idx+1}. {opt}")
+             prompt_instruction = "For each topic, enter the number of your choice (or type 'undo')."
+             print(f"\n({prompt_instruction})")
+        # Add "(or type 'undo')" for other relevant prompt types
+        elif q_type not in ["initial_prompt", "activity_transition", "show_definition"]:
+             print("\n(Type 'undo' to go back to the previous question)")
+
+
+    # --- Check for end/error/summary ---
+    # ... (End condition checks remain the same) ...
+    if q_type == "generate_summary": print("\n--- Generating Final Summary ---"); final_summary = generate_summary(user_data, all_question_structures); print(final_summary); prompt, options, q_type = get_next_prompt(conversation_state, all_question_structures, user_data); print(f"\nBot:\n> {prompt}"); print("--- Simulation End ---"); break
+    elif q_type == "completed" or q_type == "error": print("--- Simulation End ---"); break
+
+
+    # --- Simulate User Input ---
+    # Simulate "undo" occasionally, e.g., every 15 turns IF a previous state exists
+    if turn > 5 and turn % 15 == 0 and previous_conversation_state is not None:
+         user_input_raw = "undo"
+         print(f"User: {user_input_raw}")
+    else:
+         # (Simplified simulation logic from previous step - generates appropriate input based on q_type)
+         user_input_raw = f"SimInputRaw{turn}"; user_input_processed = f"SimInputProcessed{turn}"; phase_before = state_before_prompt["current_phase"]; sheet_idx_before = state_before_prompt["current_sheet_index"]; activity_before = state_before_prompt["current_activity"]; q_index_before = state_before_prompt["current_question_index"]; sheet_name = None
+         if phase_before == "basic_info": sheet_name = "Basic Information"; elif phase_before == "desired_state": sheet_name = "Desired State"; elif phase_before == "analysis_sheets" and sheet_idx_before >=0 : sheet_name = ANALYSIS_SHEET_ORDER[sheet_idx_before]; elif phase_before == "timeline": sheet_name = "TimelinePhase"
+         if q_type in ["multiple_choice", "classify_driver", "rate_impact", "rate_certainty"]: user_input_raw = "1"; try: choice_index = int(user_input_raw) - 1; user_input_processed = current_turn_options[choice_index] if current_turn_options and 0 <= choice_index < len(current_turn_options) else f"[Invalid Choice: {user_input_raw}]" ; except Exception: user_input_processed = f"[Processing Error]"
+         elif q_type == "multiple_select": user_input_raw = "1, 2"; try: indices = [int(n.strip()) - 1 for n in user_input_raw.split(',')]; selected_texts = [current_turn_options[idx] for idx in indices if current_turn_options and 0 <= idx < len(current_turn_options)]; user_input_processed = selected_texts; except Exception: user_input_processed = f"[Processing Error]"
+         elif q_type == "multiple_sets": user_input_raw = user_input_processed = "Simulated Set Answers" # Needs better simulation
+         elif q_type == "initial_prompt": user_input_raw = user_input_processed = "Start"
+         elif q_type == "show_definition": user_input_raw = user_input_processed = "OK"
+         elif q_type == "collect_insights": insights = conversation_state["activity_data"].setdefault("insights", []); user_input_raw = user_input_processed = "DONE" if len(insights) >= 1 else f"Sim Insight for {sheet_name}"
+         elif q_type == "get_theme_name": themes = conversation_state["activity_data"].get("themes", {}); drivers = conversation_state["activity_data"].get("drivers_to_group", []); assigned = conversation_state["activity_data"].get("assigned_driver_ids", set()); unassigned_count = len([d for d in drivers if d['id'] not in assigned]); user_input_raw = user_input_processed = "DONE" if len(themes) >= 1 or unassigned_count == 0 else f"Sim Theme 1"
+         elif q_type == "get_driver_assignments": user_input_raw = user_input_processed = "1"
+         elif q_type == "get_objective": themes_list = conversation_state["activity_data"].get("themes_for_objectives", []); current_theme_name = themes_list[q_index_before] if q_index_before < len(themes_list) else "Unknown"; objectives_for_theme = [obj for obj in conversation_state["activity_data"].get("objectives",[]) if obj["theme"] == current_theme_name]; user_input_raw = user_input_processed = "NEXT THEME" if objectives_for_theme else f"Sim Obj for '{current_theme_name}'"
+         elif q_type == "get_duration": user_input_raw = user_input_processed = f"{q_index_before % 3 + 1} month(s)"
+         elif q_type == "get_placement": user_input_raw = user_input_processed = f"Q{ (q_index_before % 4) + 1 } Y1"
+         elif q_type == "activity_transition": user_input_raw = user_input_processed = "OK"
+         elif q_type == "open_ended": user_input_raw = user_input_processed = f"Sim Ans for {sheet_name} Q{q_index_before}"
+         else: user_input_raw = user_input_processed = "[Ack Unknown State]"
+         print(f"User: {user_input_raw}") # Show raw simulated input
+
+
+    # --- Process Input & Update State ---
+
+    # ** Handle UNDO first **
+    if user_input_raw.upper() == "UNDO":
+        if previous_conversation_state:
+            print("Bot: Undoing last step...")
+            conversation_state = copy.deepcopy(previous_conversation_state) # Restore previous state
+            # Note: This simple undo does NOT remove the data stored in user_data from the undone step.
+            # A more complex implementation would be needed for full data rollback.
+            turn += 1
+            continue # Skip normal processing and restart the loop for the undone turn
+        else:
+            print("Bot: Nothing to undo.")
+            turn += 1
+            continue # Ask the same question again as there's nothing to undo
+
+    # ** Store Previous State (only if NOT undoing) **
+    previous_conversation_state = copy.deepcopy(state_before_prompt)
+
+    # (Simplified State Update Logic - same as previous version, uses user_input_processed)
+    # ... (COLLAPSED FOR BREVITY - this section updates conversation_state and user_data based on user_input_processed) ...
+    if phase_before == "init" and user_input_processed.upper() == "START": conversation_state["current_phase"] = "basic_info"; conversation_state["current_question_index"] = 0; conversation_state["current_activity"] = 1;
+    elif phase_before == "basic_info" and q_type != "activity_transition": sheet_name_b = "Basic Information"; q_index_b = q_index_before; user_data.setdefault(sheet_name_b, {}).setdefault("Activity 1", {})[q_index_b] = user_input_processed; # Advancement handled by phase transition logic
+    elif phase_before == "desired_state" and q_type != "activity_transition": sheet_name_d = "Desired State"; q_index_d = q_index_before; user_data.setdefault(sheet_name_d, {}).setdefault("Activity 1", {})[q_index_d] = user_input_processed; # Advancement handled by phase transition logic
+    elif phase_before == "analysis_sheets" and sheet_name:
+        activity_before = current_state_before_prompt["current_activity"]; q_index_before = current_state_before_prompt["current_question_index"]
+        if activity_before == 1 and q_type in ["multiple_choice", "multiple_select", "open_ended", "multiple_sets"]: user_data.setdefault(sheet_name, {}).setdefault("Activity 1", {})[q_index_before] = user_input_processed; conversation_state["current_question_index"] = q_index_before + 1
+        elif activity_before == 2 and q_type == "collect_insights" and user_input_processed.upper() != "DONE": conversation_state["activity_data"].setdefault("insights", []).append(user_input_processed)
+        elif activity_before == 3 and q_type == "classify_driver": drivers = current_state_before_prompt["activity_data"].get("potential_drivers", []);
+        if q_index_before < len(drivers): driver_id = drivers[q_index_before]["id"]; conversation_state["activity_data"].setdefault("driver_classifications", {})[driver_id] = (user_input_processed.lower() == "important"); conversation_state["current_question_index"] = q_index_before + 1
+        elif activity_before == 4 and q_type == "rate_impact": drivers = current_state_before_prompt["activity_data"].get("important_drivers", []);
+        if q_index_before < len(drivers): driver_id = drivers[q_index_before]["id"]; conversation_state["activity_data"].setdefault("driver_ratings", {}).setdefault(driver_id, {})["impact"] = user_input_processed; conversation_state["activity_data"]["rating_step"] = "Certainty"
+        elif activity_before == 4 and q_type == "rate_certainty": drivers = current_state_before_prompt["activity_data"].get("important_drivers", []);
+        if q_index_before < len(drivers): driver_id = drivers[q_index_before]["id"]; conversation_state["activity_data"].setdefault("driver_ratings", {}).setdefault(driver_id, {})["certainty"] = user_input_processed; conversation_state["activity_data"]["rating_step"] = "Impact"; conversation_state["current_question_index"] = q_index_before + 1
+        elif activity_before == 5 and q_type == "get_theme_name" and user_input_processed.upper() != "DONE": conversation_state["activity_data"]["current_theme_name"] = user_input_processed; conversation_state["activity_data"].setdefault("themes", {})[user_input_processed] = []; conversation_state["activity_data"]["grouping_step"] = "assign_drivers"
+        elif activity_before == 5 and q_type == "get_driver_assignments": assigned_nums = [n.strip() for n in user_input_raw.split(',')]; theme_name = current_state_before_prompt["activity_data"].get("current_theme_name"); themes = conversation_state["activity_data"].setdefault("themes", {}); assigned_set = conversation_state["activity_data"].setdefault("assigned_driver_ids", set()); current_map = current_state_before_prompt["activity_data"].get("current_assignment_map", {});
+        if theme_name and theme_name in themes:
+            for num in assigned_nums: driver_id = current_map.get(num);
+            if driver_id: themes[theme_name].append(driver_id); assigned_set.add(driver_id)
+        conversation_state["activity_data"]["grouping_step"] = "ask_theme_name"; conversation_state["activity_data"].pop("current_theme_name", None); conversation_state["activity_data"].pop("current_assignment_map", None)
+        elif activity_before == 6 and q_type == "get_objective":
+             if user_input_processed.upper() != "NEXT THEME": themes = current_state_before_prompt["activity_data"].get("themes_for_objectives", []); current_theme = themes[q_index_before] if q_index_before < len(themes) else "Unknown"; conversation_state["activity_data"].setdefault("objectives", []).append({"theme": current_theme, "objective": user_input_processed})
+             else: conversation_state["current_question_index"] = q_index_before + 1
+    elif current_state_before_prompt["current_phase"] == "timeline":
+        obj_index_before = q_index_before
+        if q_type == "get_duration": timeline_data = conversation_state["activity_data"].setdefault("timeline_data", {}); timeline_data.setdefault(obj_index_before, {})["duration"] = user_input_processed; conversation_state["activity_data"]["timeline_step"] = "ask_placement"
+        elif q_type == "get_placement": timeline_data = conversation_state["activity_data"].setdefault("timeline_data", {}); timeline_data.setdefault(obj_index_before, {})["placement"] = user_input_processed; conversation_state["activity_data"]["timeline_step"] = "ask_duration"; conversation_state["current_question_index"] = obj_index_before + 1
+
+
+    turn += 1 # Increment turn counter
+
+if turn > max_turns:
+     print("\n--- Simulation Halted (Max Turns Reached) ---")
