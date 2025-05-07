@@ -1,0 +1,507 @@
+import csv
+from io import StringIO
+from datetime import datetime, timedelta
+import re
+# --- Configuration ---
+# Current date for calculations - in a real Gem, use datetime.now()
+# For this example, using the context date: May 7, 2025
+CURRENT_DATE = datetime(2025, 5, 7)
+MONTHS_THRESHOLD = 3 # For "3 months or more before current date"
+SUMMARY_CATEGORIES = [
+    "Marketing", "Customers", "Sales", "Competition",
+    "People & Organization", "Service & Delivery", "Business Metrics", "Misc"
+]
+SUMMARY_SUB_SECTIONS = ["Insights", "Key Drivers", "Themes", "Objectives"]
+# --- Helper Functions ---
+def get_current_quarter(date_obj):
+    """Determines the quarter (1-4) for a given date."""
+    return (date_obj.month - 1) // 3 + 1
+def parse_quarter_string(q_str, year_str):
+    """Converts 'QX YYYY' or 'QXYYYY' to a start date of that quarter."""
+    q_match = re.match(r"Q(\d)", q_str.strip(), re.IGNORECASE)
+    if q_match:
+        quarter = int(q_match.group(1))
+        year = int(year_str)
+        month = (quarter - 1) * 3 + 1
+        return datetime(year, month, 1)
+    return None
+def parse_start_placement_date(date_str):
+    """
+    Parses various date string formats from the 'Start/Placement' column.
+    Returns a datetime object or None if parsing fails.
+    Handles:
+    - "Month D, YYYY" (e.g., "May 5, 2025")
+    - "Month YYYY" (e.g., "July 2025") -> Returns 1st of the month
+    - "Mid month YYYY" (e.g., "Mid may 2025") -> Returns 15th of the month
+    - "QX YYYY" (e.g., "Q3 2025") -> Returns start date of the quarter
+    """
+    date_str = date_str.strip()
+    # Standard date format
+    try:
+        return datetime.strptime(date_str, "%B %d, %Y")
+    except ValueError:
+        pass
+    try: # For cases like "May 5,2025" (no space after comma)
+        return datetime.strptime(date_str, "%B %d,%Y")
+    except ValueError:
+        pass
+    # "Month YYYY"
+    try:
+        return datetime.strptime(date_str, "%B %Y")
+    except ValueError:
+        pass
+    # "Mid month YYYY"
+    mid_month_match = re.match(r"Mid (\w+) (\d{4})", date_str, re.IGNORECASE)
+    if mid_month_match:
+        month_name = mid_month_match.group(1)
+        year = int(mid_month_match.group(2))
+        try:
+            month_number = datetime.strptime(month_name, "%B").month
+            return datetime(year, month_number, 15)
+        except ValueError:
+            pass # Invalid month name
+    # "QX YYYY" or "QXYYYY"
+    q_year_match = re.match(r"(Q\d)\s*(\d{4})", date_str, re.IGNORECASE)
+    if q_year_match:
+        q_str = q_year_match.group(1)
+        year_str = q_year_match.group(2)
+        return parse_quarter_string(q_str, year_str)
+    return None # Unable to parse
+# --- Timeline Processing ---
+def process_timeline(timeline_csv_content):
+    """
+    Processes the timeline CSV content, interacts with the user for updates,
+    and returns the updated timeline data.
+    """
+    reader = csv.DictReader(StringIO(timeline_csv_content))
+    timeline_data = list(reader)
+    updated_timeline_data = []
+    interaction_log = [] # To store questions and answers for the Gem to handle
+    current_q = get_current_quarter(CURRENT_DATE)
+    current_year = CURRENT_DATE.year
+    for i, item in enumerate(timeline_data):
+        original_item = item.copy() # Keep original for reference
+        objective = item.get("Objective", f"Row {i+1}")
+        start_placement_str = item.get("Start/Placement", "").strip()
+        
+        needs_review = False
+        reason = ""
+        # Check criteria
+        if start_placement_str.lower() in ["immediately", "not entered"]:
+            needs_review = True
+            reason = f"Marked as '{start_placement_str}'"
+        else:
+            parsed_date = parse_start_placement_date(start_placement_str)
+            if parsed_date:
+                # Criterion 1: Date 3 months or more before current date
+                if parsed_date <= (CURRENT_DATE - timedelta(days=30 * MONTHS_THRESHOLD)):
+                    needs_review = True
+                    reason = f"Start date ({parsed_date.strftime('%Y-%m-%d')}) is {MONTHS_THRESHOLD}+ months ago"
+                
+                # Criterion 2: Quarter prior to current quarter
+                item_q = get_current_quarter(parsed_date)
+                item_year = parsed_date.year
+                if item_year < current_year or (item_year == current_year and item_q < current_q):
+                    if not needs_review: # Avoid duplicate reason if already caught by date threshold
+                        needs_review = True
+                        reason = f"Start quarter (Q{item_q} {item_year}) is before current quarter (Q{current_q} {current_year})"
+            else:
+                # Could not parse the date, might need manual review or flag
+                interaction_log.append(f"INFO: Could not parse date '{start_placement_str}' for objective: {objective}")
+        if needs_review:
+            interaction_log.append(f"\nReviewing Timeline Item: '{objective}' (Original Start/Placement: '{start_placement_str}', Reason: {reason})")
+            
+            # Simulate Gem asking questions and getting answers
+            # In a real Gem, the Gem would handle input/output
+            print(f"\nReviewing Timeline Item: '{objective}'")
+            print(f"Original Start/Placement: '{start_placement_str}' (Reason: {reason})")
+            
+            work_started_response = input("Has the work started? (yes/no): ").strip().lower()
+            interaction_log.append(f"Q: Has the work started? A: {work_started_response}")
+            if work_started_response == 'no':
+                new_date_response = input(f"Please provide a new start date/placement for '{objective}': ").strip()
+                item["Start/Placement"] = new_date_response
+                item["Status (Dev Gem)"] = "Rescheduled - Not Started"
+                interaction_log.append(f"Q: New start date? A: {new_date_response}")
+            elif work_started_response == 'yes':
+                work_completed_response = input(f"Is the work completed for '{objective}'? (yes/no): ").strip().lower()
+                interaction_log.append(f"Q: Is work completed? A: {work_completed_response}")
+                if work_completed_response == 'yes':
+                    item["Status (Dev Gem)"] = "Completed"
+                    # No further action needed as per prompt
+                elif work_completed_response == 'no':
+                    new_date_response = input(f"Please provide a new expected completion date/placement for '{objective}': ").strip()
+                    # Prompt asks for a "new date", assuming update Start/Placement or add a new field
+                    item["Start/Placement"] = new_date_response 
+                    item["Status (Dev Gem)"] = "In Progress - Rescheduled"
+                    interaction_log.append(f"Q: New completion date? A: {new_date_response}")
+                else:
+                    item["Status (Dev Gem)"] = "Started - User provided invalid completion status"
+                    interaction_log.append(f"User provided invalid completion status: {work_completed_response}")
+            else:
+                item["Status (Dev Gem)"] = "User provided invalid start status"
+                interaction_log.append(f"User provided invalid start status: {work_started_response}")
+        
+        updated_timeline_data.append(item)
+    # print("\nInteraction Log (Timeline):") # For debugging
+    # for log_entry in interaction_log:
+    #     print(log_entry)
+        
+    return updated_timeline_data
+# --- Summary Processing ---
+def extract_summary_section_content(summary_text_lines, category, sub_section):
+    """
+    Extracts content for a specific category and sub-section from summary lines.
+    This is a heuristic approach due to the text-based nature of the summary.
+    """
+    content = []
+    in_category = False
+    in_sub_section = False
+    # Regex to match the category (e.g., "Marketing" at the start of a line)
+    category_regex = re.compile(r"^\s*" + re.escape(category) + r"\s*$", re.IGNORECASE)
+    # Regex to match sub-sections (e.g., "Insights:", "Key Drivers (Important & Rated):")
+    sub_section_regex = re.compile(r"^\s*" + re.escape(sub_section) + r"(?:\s*:|\s*\(Important & Rated\):)?\s*$", re.IGNORECASE)
+    
+    next_major_header_regex = re.compile(r"^\s*(" + "|".join(re.escape(c) for c in SUMMARY_CATEGORIES + ["My Business Success Plan Summary", "Basic Information", "Desired State"]) + r")\s*$", re.IGNORECASE)
+    next_sub_section_header_regex = re.compile(r"^\s*(" + "|".join(re.escape(s) for s in SUMMARY_SUB_SECTIONS) + r")(?:\s*:|\s*\(Important & Rated\):)?\s*$", re.IGNORECASE)
+    for line_num, line in enumerate(summary_text_lines):
+        if not in_category:
+            if category_regex.match(line):
+                in_category = True
+        elif in_category: # If we are in the target category
+            # Check if we hit the next major category
+            if category_regex.match(line) and line.strip().lower() != category.lower(): # Another main category
+                break # Stop if we hit the next main category (that's not the current one)
+            if next_major_header_regex.match(line) and not category_regex.match(line): # Any other major section
+                 if not any(cat.lower() == line.strip().lower() for cat in SUMMARY_CATEGORIES): # ensure it's not one of THE categories
+                    pass # Still potentially in the section, e.g. "Desired state" is not a target review category
+                 elif line.strip().lower() != category.lower() : # if it IS a target review category, but not current one
+                    break
+            if not in_sub_section:
+                if sub_section_regex.match(line):
+                    in_sub_section = True
+                    # Potentially skip the header line itself from content if needed
+                    # For now, include it to show context, or decide how to handle it
+                    # content.append(line) # Option: include header
+            elif in_sub_section:
+                # If we hit another sub-section header or another major category header, stop collecting for current sub-section
+                if sub_section_regex.match(line) and not re.match(r"^\s*" + re.escape(sub_section) + r"(?:\s*:|\s*\(Important & Rated\):)?\s*$", line, re.IGNORECASE): # A *different* sub-section
+                    break 
+                if category_regex.match(line) and line.strip().lower() != category.lower(): # Another main category
+                     break
+                if next_major_header_regex.match(line) and not category_regex.match(line) and not any(cat.lower() == line.strip().lower() for cat in SUMMARY_CATEGORIES):
+                    pass # still fine
+                elif next_major_header_regex.match(line) and not category_regex.match(line) and line.strip().lower() != category.lower():
+                    break
+                # Check for common "empty" or placeholder lines for some sections in sample
+                if "No significant insights, drivers, themes, or objectives recorded." in line and sub_section in ["Insights", "Key Drivers", "Themes", "Objectives"]:
+                    return ["(No content recorded in original document)"]
+                if "No objectives defined for this section" in line and sub_section == "Objectives":
+                     return ["(No objectives defined in original document)"]
+                
+                if line.strip(): # Add non-empty lines
+                    content.append(line)
+    
+    return content if content else ["(Content not found or section empty)"]
+def process_summary(summary_csv_content):
+    """
+    Processes the summary CSV content, interacts with user for updates,
+    and returns the updated summary data as a dictionary of sections.
+    """
+    # Summary CSV is less structured, often read as lines of text.
+    # For this example, we'll treat it as a single block of text split into lines.
+    # The provided "CSV" for summary seems more like a text dump where each row is a line.
+    
+    raw_lines = summary_csv_content.splitlines()
+    
+    # We will rebuild the summary. Original text for non-updated parts.
+    updated_summary_parts = {} # Store updated text for sections
+    interaction_log = []
+    print("\n--- Processing Summary ---")
+    for category in SUMMARY_CATEGORIES:
+        updated_summary_parts[category] = {}
+        print(f"\nReviewing Category: {category}")
+        interaction_log.append(f"Category: {category}")
+        for sub_section in SUMMARY_SUB_SECTIONS:
+            interaction_log.append(f"  Sub-section: {sub_section}")
+            
+            # Attempt to find existing content (this is the challenging part)
+            existing_content_lines = extract_summary_section_content(raw_lines, category, sub_section)
+            print(f"\n  Current '{sub_section}' for '{category}':")
+            if existing_content_lines:
+                for L in existing_content_lines: print(f"    {L}")
+            else:
+                print("    (No content found or section empty)")
+            # Simulate Gem asking
+            update_needed_response = input(f"  Do the '{sub_section}' for '{category}' need to be updated or added to? (yes/no): ").strip().lower()
+            interaction_log.append(f"  Q: Update '{sub_section}' for '{category}'? A: {update_needed_response}")
+            if update_needed_response == 'yes':
+                print(f"  Please provide the new/updated text for '{sub_section}' for '{category}'.")
+                print("  (Enter multi-line input. Type DONE on a new line when finished):")
+                new_content_lines = []
+                while True:
+                    line = input()
+                    if line.strip().upper() == 'DONE':
+                        break
+                    new_content_lines.append(line)
+                
+                updated_summary_parts[category][sub_section] = new_content_lines
+                interaction_log.append(f"  New content provided for '{sub_section}' of '{category}'.")
+            else:
+                # Keep original content if no update
+                 updated_summary_parts[category][sub_section] = existing_content_lines
+    # For debugging interaction:
+    # print("\nInteraction Log (Summary):")
+    # for log_entry in interaction_log:
+    #     print(log_entry)
+        
+    # Reconstruct the full summary text with updates
+    # This part needs to be sophisticated to merge updates back into the original structure
+    # For now, we'll return the structured updates, and a separate function can format it.
+    
+    # A simple reconstruction (can be improved)
+    final_summary_text = []
+    current_category = None
+    
+    # Add initial parts of the summary (before categories)
+    in_main_categories_section = False
+    for line in raw_lines:
+        is_category_header = False
+        for cat_header in SUMMARY_CATEGORIES:
+            if re.match(r"^\s*" + re.escape(cat_header) + r"\s*$", line, re.IGNORECASE):
+                is_category_header = True
+                current_category = cat_header # The one that matched
+                in_main_categories_section = True
+                break
+        
+        if is_category_header:
+            # We've hit the start of a managed category. Print its header.
+            final_summary_text.append(line) # Add the category header like "Marketing"
+            
+            # Add its updated/original sub-sections
+            if current_category in updated_summary_parts:
+                for sub_sec in SUMMARY_SUB_SECTIONS:
+                    if sub_sec in updated_summary_parts[current_category]:
+                        # Add sub-section header (e.g., "Insights:")
+                        # This assumes a simple header format. Adjust if summary has more complex ones.
+                        if updated_summary_parts[current_category][sub_sec] and \
+                           not (len(updated_summary_parts[current_category][sub_sec]) == 1 and \
+                                "(No content recorded" in updated_summary_parts[current_category][sub_sec][0] or \
+                                "(Content not found" in updated_summary_parts[current_category][sub_sec][0] or \
+                                "(No objectives defined" in updated_summary_parts[current_category][sub_sec][0]):
+                            final_summary_text.append(f"\n{sub_sec}:") # Add sub-section title
+                            final_summary_text.extend(updated_summary_parts[current_category][sub_sec])
+                        elif not updated_summary_parts[current_category][sub_sec] or \
+                             (len(updated_summary_parts[current_category][sub_sec]) == 1 and \
+                             ("(No content recorded" in updated_summary_parts[current_category][sub_sec][0] or \
+                              "(Content not found" in updated_summary_parts[current_category][sub_sec][0] or \
+                              "(No objectives defined" in updated_summary_parts[current_category][sub_sec][0])):
+                             # If it was empty or placeholder and not updated, we can choose to show a placeholder or omit
+                             final_summary_text.append(f"\n{sub_sec}:")
+                             final_summary_text.append(f"  (No specific content provided or updated for this section)")
+            current_category_processed = True # Flag to skip original lines of this category
+            # Skip lines from original doc until next category or end
+            # This simplistic approach might need refinement for complex docs
+            
+        elif in_main_categories_section:
+            # If we are inside a category block that was just processed, skip original lines
+            # This logic needs to be very careful to not skip too much or too little.
+            # A better way would be to mark ranges of lines belonging to each managed section.
+            # For now, this simplified version adds non-category header lines if we're not "inside"
+            # a category that we just finished printing.
+            # This part is tricky: when to add original lines vs. when they are replaced.
+            # The current `extract_summary_section_content` and reconstruction logic is an approximation.
+            # A more robust solution would parse the summary into a tree structure.
+             pass # Skip lines if they were part of a category we just handled from updated_summary_parts
+        
+        else: # Before we hit any of the main SUMMARY_CATEGORIES
+            final_summary_text.append(line)
+    # If the above reconstruction is too basic, an alternative is to just output the updated sections
+    # and let the user manually integrate them.
+    # For this script, let's try a slightly better reconstruction if the above isn't good:
+    # Iterate original lines. If a line is a start of a managed section, inject updated content.
+    # Else, copy original line.
+    reconstructed_summary_lines = []
+    line_idx = 0
+    while line_idx < len(raw_lines):
+        line = raw_lines[line_idx]
+        matched_category = None
+        
+        for cat_name in SUMMARY_CATEGORIES:
+            if re.match(r"^\s*" + re.escape(cat_name) + r"\s*$", line, re.IGNORECASE):
+                matched_category = cat_name
+                break
+        
+        if matched_category:
+            reconstructed_summary_lines.append(line) # Add Category header
+            if matched_category in updated_summary_parts:
+                for sub_sec_name in SUMMARY_SUB_SECTIONS:
+                    content_to_add = updated_summary_parts[matched_category].get(sub_sec_name)
+                    if content_to_add:
+                         # Check if it's not just the placeholder
+                        is_placeholder = (len(content_to_add) == 1 and 
+                                          ("(No content recorded" in content_to_add[0] or \
+                                           "(Content not found" in content_to_add[0] or \
+                                           "(No objectives defined" in content_to_add[0]))
+                        
+                        # Add sub-section header like "Insights:"
+                        # This needs to be consistent with how extract_summary_section_content identifies headers
+                        reconstructed_summary_lines.append(f"\n{sub_sec_name}:") # Basic header
+                        if not is_placeholder:
+                            reconstructed_summary_lines.extend(content_to_add)
+                        else: # if it is placeholder, indicate that
+                             reconstructed_summary_lines.append("  (No specific content provided or updated for this section)")
+            # Skip original lines of this category until the next major header or EOF
+            line_idx += 1
+            while line_idx < len(raw_lines):
+                next_line = raw_lines[line_idx]
+                is_next_major_header = False
+                for cn in SUMMARY_CATEGORIES: # Is it another one of OUR categories?
+                    if re.match(r"^\s*" + re.escape(cn) + r"\s*$", next_line, re.IGNORECASE):
+                        is_next_major_header = True
+                        break
+                if not is_next_major_header: # Is it any other major header (like "Desired State")?
+                     # Regex for any major section header (includes non-target ones for boundary detection)
+                    all_major_headers_regex = re.compile(r"^\s*(" + "|".join(re.escape(c) for c in SUMMARY_CATEGORIES + ["My Business Success Plan Summary", "Basic Information", "Desired State", "Technology"]) + r")\s*$", re.IGNORECASE)
+                    if all_major_headers_regex.match(next_line):
+                        is_next_major_header = True
+                if is_next_major_header:
+                    break 
+                line_idx += 1
+            continue # Continue to process next line which should be a new header or EOF
+        else:
+            reconstructed_summary_lines.append(line)
+            line_idx += 1
+            
+    return "\n".join(reconstructed_summary_lines)
+# --- Output Formatting ---
+def format_timeline_for_export(timeline_data):
+    """Formats the timeline data into a CSV string for export."""
+    if not timeline_data:
+        return "No timeline data to export."
+    # Ensure all headers are present, add "Status (Dev Gem)" if not
+    fieldnames = list(timeline_data[0].keys())
+    if "Status (Dev Gem)" not in fieldnames:
+         # This should not happen if process_timeline adds it, but as a safeguard
+        for item in timeline_data:
+            if "Status (Dev Gem)" not in item:
+                item["Status (Dev Gem)"] = "" # Ensure key exists
+    # Re-fetch fieldnames if they were modified
+    fieldnames = list(timeline_data[0].keys())
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(timeline_data)
+    return output.getvalue()
+# --- Main Script Logic (Example Usage) ---
+if __name__ == "__main__":
+    # Simulate fetching content from files (replace with actual fetched content strings)
+    # These would be populated by the Gem's file reading mechanism
+    timeline_csv_content_sample = """Objective,From Sheet,Theme,Duration,Start/Placement
+Within 2 months redefine the core descriptions of our products and services to better speak to client pain points and future states.,Marketing,Website updates,3 months,Mid may 2025
+Within 1 month conduct market research to improve messaging to ideal client,Marketing,Improve Messaging to Ideal Client,2 weeks,"May 5, 2025"
+Develop a strategy for improving data efficiency,Customers,Improve customer & lead data to allow for better decision making.,1 month,"June 1, 2025"
+Implement a Strategy for improving data efficiency,Customers,Improve customer & lead data to allow for better decision making.,1 month,July 2025
+Evaluate the effectiveness of the strategy for improving data efficiency,Customers,Improve customer & lead data to allow for better decision making.,2 months,Q3 2025
+Conduct Market Research on affiliates offers,Customers,Identify ways to improve our affiliate program and increase customer loyalty,3 months,Q4 2025
+Implement changes to affiliates offers,Customers,Identify ways to improve our affiliate program and increase customer loyalty,1 week,Dec 2025
+Review the existing sales process for improvements,Sales,Review and refine sales process for what is/is not working,6 months,Immediately
+Role play the sales call,Sales,Review and refine sales process for what is/is not working,Ongoing,Immediately
+role play the sales call 20 times for ways to overcome objections,Sales,Role play the sales call,2 months,Jan 1, 2025
+add new products to google merchant center,Sales,Explore options to market new offerings,2 weeks,July 2025
+Explore FB ads,Sales,Explore options to market new offerings,1 month,July 2025
+Utilize the Hive and CoHosting with BOTAO for marketing,Sales,Explore options to market new offerings,Ongoing,Immediately
+Identify KPIs for team productivity,Business Metrics,Measuring Team Productivity,Not Entered,Not Entered
+"Develop, Review, and Finalize SOPs",Business Metrics,Standard Operating Procedures,Not Entered,Not Entered"""
+    summary_csv_content_sample = """My Business Success Plan Summary
+Basic Information
+Name of Organization: K Feather Solutions LLC
+Years In Business: Just over 2
+"Annual Revenue this past year: $40,000"
+"Projected Revenue Current Year: $40,000"
+Desired State (18-24 Months)
+"In the next 18-24 months will your organization be different? Consider?: hiring a VA, adding 2 new products"
+"If yes, how?: nothing further"
+"What will be the status of your service or product offering, or both, if appropriate?: None of the above"
+What management systems and/or technology will you be using better or more effectively?: Same systems as currently using. No planned changes
+"How will your key financial metrics look?: I expect the two products to generate about $25,000 combined. Both products have margins of about 60%."
+"Will your relationship with your clients have changed? If so, how?: I will work to gain more business and upsell clients on existing product lines. I'll also work to eliminate clients that are difficult or hard to manage."
+How Many people including yourself work in your business? Include FT/PT/Frelance: 2
+What else will change?: Nothing to considerable. I'll be guest appearing on some podcasts for additional visibility and to increase my newsletter and blog readership.
+Situation Analysis & Objectives
+Marketing
+Insights:
+I need to invest more time and money into my website
+I need to improve messaging to my ideal client base
+I need to find a better method to qualify clients and match them to the correct product/ service without calls.
+Key Drivers (Important & Rated):
+"Answer to 'What is the main purpose of your website?': To provide information about what we do and give prospective clients our contact details. (Impact: High, Certainty: High)"
+"Answer to 'When thinking about your current website, which of the following statements are most accurate? (Regarding Description)': Our website poorly describes our current products and/or services. (Impact: High, Certainty: Medium)"
+Themes:
+Theme: Website updates
+Theme: Improve Messaging to Ideal Client
+Objectives:
+Theme: Website updates
+Objective: Within 2 months redefine the core descriptions of our products and services to better speak to client pain points and future states.
+Theme: Improve Messaging to Ideal Client
+Objective: Within 1 month conduct market research to improve messaging to ideal client
+Customers
+Insights:
+I need to better promote my affiliate offers.
+Key Drivers (Important & Rated):
+"Answer to 'Please select the statement that most accurately reflects your relationship with your customers. (Regarding Customer List)': Our customer records are not as good as they could be. (Impact: High, Certainty: Medium)"
+Themes:
+Theme: Improve customer & lead data to allow for better decision making.
+Objectives:
+Objective: Develop a strategy for improving data efficiency
+Sales
+Insights:
+We need to refine our sales process
+Key Drivers (Important & Rated):
+"Answer to 'Whether you or your Sales Person/Team are responsible for Sales, which of the following are true? Check all that apply.': I or my Sales team need better tools and training to do the job more effectively, I am not comfortable in the Sales role (Impact: High, Certainty: High)"
+Themes:
+Theme: Review and refine sales process for what is/is not working
+Objectives:
+Objective: Review the existing sales process for improvements
+Competition
+Insights:
+Competitors have been in business longer
+Key Drivers (Important & Rated):
+"Answer to 'When thinking about your competition, list up to five areas in which you have opportunity to improve your competitive edge.': Service speed, Personalized services, Customer Support, My Business Success Manager, My Monthly Membership (Impact: High, Certainty: High)"
+Themes:
+Theme: Competitive Edge Opportunities
+Objectives: No objectives defined for this section as no themes required them based on ratings.
+Technology
+"No significant insights, drivers, themes, or objectives recorded."
+People & Organization
+"No significant insights, drivers, themes, or objectives recorded."
+Service & Delivery
+"No significant insights, drivers, themes, or objectives recorded."
+Business Metrics
+Insights:
+Finish developing SOPs for all processes
+Key Drivers (Important & Rated):
+"Answer to 'Which of the following things do you NOT but SHOULD measure better on a regular basis? Check all that apply.': Productivity of my workforce (Impact: High, Certainty: High)"
+Themes:
+Theme: Measuring Team Productivity
+Objectives:
+Objective: Identify KPIs for team productivity
+Misc
+"No significant insights, drivers, themes, or objectives recorded."
+"""
+    # In the Gem, you would get these from the file upload tool
+    # timeline_csv_content = ... content of "Strategic Plan - Timeline.csv" ...
+    # summary_csv_content = ... content of "Strategic Plan - Summary.csv" ...
+    print("Starting Strategic Plan Review Script...")
+    # Process Timeline
+    # In Gem: Pass actual fetched content
+    updated_timeline = process_timeline(timeline_csv_content_sample) 
+    timeline_export_table = format_timeline_for_export(updated_timeline)
+    print("\n\n--- Updated Timeline (for export) ---")
+    print(timeline_export_table)
+    # Process Summary
+    # In Gem: Pass actual fetched content
+    updated_summary_text = process_summary(summary_csv_content_sample) 
+    print("\n\n--- Updated Summary (for copy-paste) ---")
+    print(updated_summary_text)
+    print("\nScript finished.")
