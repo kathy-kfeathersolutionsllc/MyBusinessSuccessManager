@@ -1,0 +1,329 @@
+import { useState } from 'react';
+
+export default function BusinessStrategicPlanner() {
+  const [step, setStep] = useState(0);
+  const [formData, setFormData] = useState({
+    // Basic Information
+    organizationName: '',
+    yearsInBusiness: '',
+    annualRevenuePastYear: '',
+    projectedRevenue: '',
+    
+    // Desired State
+    futureServiceProduct: '',
+    futureSystems: '',
+    futureFinancials: '',
+    futureClientRelationships: '',
+    futurePeople: '',
+    futureOther: '',
+    
+    // Additional data structures will be added for subsequent sections
+    keyDrivers: [],
+    driverRatings: {},
+    groupedFindings: {},
+    objectives: [],
+    timeline: []
+  });
+  
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+  };
+  
+  const nextStep = () => {
+    setStep(step + 1);
+  };
+  
+  const prevStep = () => {
+    setStep(step - 1);
+  };
+  
+  const generateSummaryDocument = () => {
+    // Generate summary document for export
+    const summary = `
+# Strategic Business Plan for ${formData.organizationName}
+
+## Basic Information
+- Organization Name: ${formData.organizationName}
+- Years in Business: ${formData.yearsInBusiness}
+- Annual Revenue (Past Year): ${formData.annualRevenuePastYear}
+- Projected Revenue (Current Year): ${formData.projectedRevenue}
+
+## Desired State (18-24 Month Vision)
+- Service/Product Offering: ${formData.futureServiceProduct}
+- Management Systems & Technology: ${formData.futureSystems}
+- Key Financial Metrics: ${formData.futureFinancials}
+- Client Relationships: ${formData.futureClientRelationships}
+- Team Composition: ${formData.futurePeople}
+- Other Changes: ${formData.futureOther}
+
+## Key Drivers
+${formData.keyDrivers.map(driver => `- ${driver}`).join('\n')}
+
+## Objectives
+${formData.objectives.map(obj => `- ${obj.description}`).join('\n')}
+
+## Timeline
+${formData.timeline.map(item => `- ${item.objective}: ${item.timeline}`).join('\n')}
+`;
+    
+    return summary;
+  };
+  
+  const generateTimelineTable = () => {
+    // Generate timeline table for export
+    return formData.timeline.map(item => ({
+      Objective: item.objective,
+      Timeline: item.timeline,
+      Owner: item.owner
+    }));
+  };
+  
+  const steps = [
+    // Step 0: Introduction
+    <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold text-blue-700 mb-4">Business Strategic Planner</h1>
+      <p className="mb-4">Welcome to your strategic business planning tool. This app will guide you through creating a comprehensive strategic plan with a detailed roadmap for the next 6-18 months.</p>
+      
+      <h2 className="text-xl font-semibold mt-6 mb-2">Best Practices:</h2>
+      <ul className="list-disc pl-6 mb-6 space-y-1">
+        <li>Involve key team members and stakeholders</li>
+        <li>Give yourself ample time to thoughtfully answer the questions</li>
+        <li>Come with key data about the various areas of your business</li>
+        <li>Consider what is and isn't working well</li>
+        <li>If you don't have enough resources & no money to hire/contract, prioritize and add to a backlog</li>
+        <li>Lower ranked items should be added to an overall backlog for future consideration</li>
+      </ul>
+      
+      <h2 className="text-xl font-semibold mt-6 mb-2">Process:</h2>
+      <ol className="list-decimal pl-6 mb-6 space-y-1">
+        <li>Answer the questions about your business</li>
+        <li>Add any additional information</li>
+        <li>Identify key drivers</li>
+        <li>Rate the drivers</li>
+        <li>Group your findings</li>
+        <li>Define objectives</li>
+        <li>Assign a timeline for when you are committing to the work</li>
+        <li>Review your timeline and make adjustments</li>
+        <li>Share with those that were not involved in the process</li>
+      </ol>
+      
+      <button 
+        onClick={nextStep}
+        className="mt-6 px-6 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700"
+      >
+        Get Started
+      </button>
+    </div>,
+    
+    // Step 1: Basic Information
+    <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold text-blue-700 mb-4">Basic Information</h1>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">Organization Name</label>
+          <input
+            type="text"
+            name="organizationName"
+            value={formData.organizationName}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">Years in Business</label>
+          <input
+            type="text"
+            name="yearsInBusiness"
+            value={formData.yearsInBusiness}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">Annual Revenue (Past Year)</label>
+          <input
+            type="text"
+            name="annualRevenuePastYear"
+            value={formData.annualRevenuePastYear}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">Projected Revenue (Current Year)</label>
+          <input
+            type="text"
+            name="projectedRevenue"
+            value={formData.projectedRevenue}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+      
+      <div className="mt-8 flex justify-between">
+        <button 
+          onClick={prevStep} 
+          className="px-6 py-2 bg-gray-500 text-white font-medium rounded hover:bg-gray-600"
+        >
+          Back
+        </button>
+        <button 
+          onClick={nextStep}
+          className="px-6 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700"
+        >
+          Next: Desired State
+        </button>
+      </div>
+    </div>,
+    
+    // Step 2: Desired State
+    <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold text-blue-700 mb-4">Desired State (18-24 Months)</h1>
+      <p className="mb-4 text-gray-600">Define what you want your business to look like in the next 18-24 months.</p>
+      
+      <div className="space-y-6">
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months what will be the status of your service or product offering, or both, if appropriate?
+          </label>
+          <textarea
+            name="futureServiceProduct"
+            value={formData.futureServiceProduct}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months what management systems and/or technology will you be using better or more effectively?
+          </label>
+          <textarea
+            name="futureSystems"
+            value={formData.futureSystems}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months how will your key financial metrics look?
+          </label>
+          <textarea
+            name="futureFinancials"
+            value={formData.futureFinancials}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months will your relationship with your clients have changed? If so, how?
+          </label>
+          <textarea
+            name="futureClientRelationships"
+            value={formData.futureClientRelationships}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months how many people including yourself work in your business? Include FT/PT/Freelance
+          </label>
+          <textarea
+            name="futurePeople"
+            value={formData.futurePeople}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">
+            In the next 18-24 months what else will change?
+          </label>
+          <textarea
+            name="futureOther"
+            value={formData.futureOther}
+            onChange={handleInputChange}
+            rows="3"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+      
+      <div className="mt-8 flex justify-between">
+        <button 
+          onClick={prevStep} 
+          className="px-6 py-2 bg-gray-500 text-white font-medium rounded hover:bg-gray-600"
+        >
+          Back
+        </button>
+        <button 
+          onClick={nextStep}
+          className="px-6 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700"
+        >
+          Next: Key Drivers (Placeholder)
+        </button>
+      </div>
+    </div>,
+    
+    // Step 3: Placeholder for Future Steps
+    <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold text-blue-700 mb-4">Next Steps Coming Soon</h1>
+      <p className="mb-6">Based on the instructions, the next steps will include:</p>
+      
+      <ol className="list-decimal pl-6 space-y-2 mb-6">
+        <li>Key Drivers identification</li>
+        <li>Driver rating</li>
+        <li>Grouping findings</li>
+        <li>Defining objectives</li>
+        <li>Creating a timeline</li>
+        <li>Review and adjustments</li>
+        <li>Export options</li>
+      </ol>
+      
+      <p className="mb-4 text-blue-600">
+        I'll need the complete set of questions for these additional sections to build them out fully.
+      </p>
+      
+      <div className="mt-8 flex justify-between">
+        <button 
+          onClick={prevStep} 
+          className="px-6 py-2 bg-gray-500 text-white font-medium rounded hover:bg-gray-600"
+        >
+          Back
+        </button>
+        <button 
+          onClick={prevStep}
+          className="px-6 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700"
+        >
+          Return to Desired State
+        </button>
+      </div>
+    </div>
+  ];
+  
+  return (
+    <div className="min-h-screen bg-gray-100 py-8">
+      {steps[step]}
+    </div>
+  );
+}
